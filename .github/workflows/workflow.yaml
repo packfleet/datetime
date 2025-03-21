@@ -1,0 +1,79 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [created]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      LANG: en_GB.UTF-8
+      LC_ALL: en_GB.UTF-8
+      TZ: Europe/London
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up en_GB.UTF-8 locale
+        run: |
+          sudo locale-gen en_GB.UTF-8
+          sudo update-locale LANG=en_GB.UTF-8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm test:ci
+
+      - name: Run linting
+        run: pnpm lint:ci
+
+      - name: Build package
+        run: pnpm build
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'created'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Update version in package.json
+        run: |
+          VERSION=$(echo $GITHUB_REF | sed 's/^refs\/tags\/v//')
+          sed -i "s/\"version\": \"0.0.0\"/\"version\": \"$VERSION\"/" package.json
+
+      - name: Build package
+        run: pnpm build
+
+      - name: Publish to npm
+        run: pnpm publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
